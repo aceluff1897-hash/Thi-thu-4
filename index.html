@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hệ thống thi thử TSA - TDMTSA01</title>
+    
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
+
+    <style>
+        :root { --primary: #b10000; --bg: #f5f7f9; --sidebar: #ffffff; --done: #444444; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; background: var(--bg); overflow: hidden; }
+        
+        header { background: var(--primary); color: white; padding: 12px 25px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        .timer { background: white; color: #333; padding: 6px 16px; border-radius: 5px; font-weight: bold; font-size: 22px; border: 2px solid #ddd; }
+        .timer.warning { color: #d9534f; border-color: #d9534f; animation: blink 1s infinite; }
+        @keyframes blink { 50% { opacity: 0.5; } }
+
+        .main-layout { display: flex; flex: 1; overflow: hidden; }
+        .sidebar { width: 300px; background: var(--sidebar); border-right: 1px solid #ddd; padding: 20px; overflow-y: auto; }
+        .question-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+        .q-item { aspect-ratio: 1/1; border: 1px solid #ccc; display: flex; align-items: center; justify-content: center; cursor: pointer; border-radius: 6px; background: white; }
+        .q-item.answered { background: var(--done) !important; color: white; }
+        .q-item.active { border: 3px solid #ff9800; font-weight: bold; }
+
+        .content-area { flex: 1; padding: 40px; overflow-y: auto; display: flex; flex-direction: column; align-items: center; }
+        .question-card { background: white; width: 100%; max-width: 850px; padding: 40px; border-radius: 15px; box-shadow: 0 5px 20px rgba(0,0,0,0.05); }
+        
+        /* Modal Style */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 9999; display: none; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+        .modal-content { background: white; padding: 30px; border-radius: 12px; width: 90%; max-width: 600px; text-align: center; }
+        textarea { width: 100%; height: 300px; margin: 15px 0; font-family: 'Courier New', monospace; padding: 10px; border: 1px solid #ddd; }
+
+        .option-box { border: 1px solid #dee2e6; padding: 15px; margin-bottom: 10px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; }
+        .option-box.selected { background: #fff5f5; border-color: var(--primary); color: var(--primary); font-weight: bold; }
+        
+        footer { background: white; padding: 15px 40px; border-top: 1px solid #ddd; display: flex; justify-content: space-between; }
+        .btn { padding: 10px 25px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        .btn-submit { background: var(--primary); color: white; }
+        .btn-admin { background: #333; color: white; }
+    </style>
+</head>
+<body>
+
+<header>
+    <div><strong>LUYỆN THI TSA - ĐỀ TDMTSA01</strong></div>
+    <div style="display: flex; gap: 15px; align-items: center;">
+        <button class="btn btn-admin" id="openAdminBtn">⚙ Cấu hình đề</button>
+        <div id="timer" class="timer">60:00</div>
+    </div>
+</header>
+
+<div class="main-layout">
+    <div class="sidebar">
+        <div class="question-grid" id="question-grid"></div>
+    </div>
+    <div class="content-area">
+        <div class="question-card" id="question-card"></div>
+    </div>
+</div>
+
+<div id="admin-modal" class="modal-overlay">
+    <div class="modal-content">
+        <h3>Cấu hình câu hỏi (JSON)</h3>
+        <textarea id="json-input"></textarea>
+        <button class="btn btn-submit" style="width: 100%;" onclick="applyData()">Cập nhật đề thi</button>
+        <button class="btn" style="width: 100%; margin-top: 10px; background: #ccc;" onclick="closeModal()">Đóng</button>
+    </div>
+</div>
+
+<div id="result-modal" class="modal-overlay">
+    <div class="modal-content">
+        <h2>KẾT QUẢ BÀI THI</h2>
+        <h1 id="score-display" style="color: var(--primary); font-size: 48px;">0/0</h1>
+        <p id="score-percent" style="font-size: 20px;"></p>
+        <button class="btn btn-submit" style="width: 100%;" onclick="location.reload()">Làm đề khác</button>
+    </div>
+</div>
+
+<footer>
+    <div>
+        <button class="btn" style="background:#6c757d; color:white" onclick="changeQ(-1)">Câu trước</button>
+        <button class="btn" style="background:#6c757d; color:white" onclick="changeQ(1)">Câu sau</button>
+    </div>
+    <button class="btn btn-submit" onclick="confirmSubmit()">NỘP BÀI</button>
+</footer>
+
+<script>
+    let quizData = [
+        { type: "single", q: "Hàm số nào là hàm số chẵn?", a: ["$y=\\cos x$", "$y=\\sin x$", "$y=\\tan x$"], c: "$y=\\cos x$" },
+        { type: "ds", q: "Xét tính đúng sai:", sub: ["$1+1=2$", "$2+2=5$"], c: ["Đ", "S"] },
+        { type: "fill", q: "Số n = 40! có bao nhiêu số 0 tận cùng?", c: "9" }
+    ];
+
+    let userAnswers = [];
+    let currentIdx = 0;
+    let timeLeft = 3600;
+
+    // Fix lỗi nút cấu hình: Sử dụng addEventListener
+    document.getElementById('openAdminBtn').addEventListener('click', function() {
+        document.getElementById('json-input').value = JSON.stringify(quizData, null, 2);
+        document.getElementById('admin-modal').style.display = 'flex';
+    });
+
+    function closeModal() { document.getElementById('admin-modal').style.display = 'none'; }
+
+    function applyData() {
+        try {
+            quizData = JSON.parse(document.getElementById('json-input').value);
+            userAnswers = new Array(quizData.length).fill(null);
+            currentIdx = 0;
+            renderGrid();
+            showQ(0);
+            closeModal();
+            alert("Đã cập nhật đề mới thành công!");
+        } catch(e) { alert("Lỗi định dạng JSON! Vui lòng kiểm tra lại dấu ngoặc."); }
+    }
+
+    function renderGrid() {
+        const grid = document.getElementById('question-grid');
+        grid.innerHTML = '';
+        quizData.forEach((_, i) => {
+            const div = document.createElement('div');
+            let answered = (userAnswers[i] !== null && userAnswers[i] !== undefined);
+            if(quizData[i].type === 'ds' && userAnswers[i]) answered = userAnswers[i].every(v => v !== null);
+            div.className = `q-item ${answered ? 'answered' : ''} ${i === currentIdx ? 'active' : ''}`;
+            div.innerText = i + 1;
+            div.onclick = () => showQ(i);
+            grid.appendChild(div);
+        });
+    }
+
+    function showQ(index) {
+        currentIdx = index;
+        const data = quizData[index];
+        const card = document.getElementById('question-card');
+        let html = `<div class="q-text"><b>Câu ${index + 1}:</b> ${data.q}</div>`;
+
+        if (data.type === 'single') {
+            html += data.a.map(opt => `<div class="option-box ${userAnswers[index] === opt ? 'selected' : ''}" onclick="saveAns('${opt}')">${opt}</div>`).join('');
+        } else if (data.type === 'ds') {
+            if(!userAnswers[index]) userAnswers[index] = new Array(data.sub.length).fill(null);
+            html += `<table class="ds-table"><tr><th>Mệnh đề</th><th>Đúng</th><th>Sai</th></tr>` + 
+                data.sub.map((s, si) => `<tr><td style="text-align:left">${s}</td>
+                <td><input type="radio" name="ds${si}" onclick="saveDS(${si},'Đ')" ${userAnswers[index][si]==='Đ'?'checked':''}></td>
+                <td><input type="radio" name="ds${si}" onclick="saveDS(${si},'S')" ${userAnswers[index][si]==='S'?'checked':''}></td></tr>`).join('') + `</table>`;
+        } else if (data.type === 'fill') {
+            html += `<input type="text" class="fill-input" value="${userAnswers[index] || ''}" oninput="saveAns(this.value)" placeholder="Đáp số...">`;
+        }
+
+        card.innerHTML = html;
+        renderMathInElement(card, { delimiters: [{left: "$", right: "$", display: false}] });
+        renderGrid();
+    }
+
+    window.saveAns = (v) => { userAnswers[currentIdx] = v; renderGrid(); };
+    window.saveDS = (si, v) => { userAnswers[currentIdx][si] = v; renderGrid(); };
+    window.changeQ = (s) => { let n = currentIdx + s; if(n>=0 && n<quizData.length) showQ(n); };
+
+    function startTimer() {
+        const timerEl = document.getElementById('timer');
+        setInterval(() => {
+            if(timeLeft <= 0) return;
+            timeLeft--;
+            let m = Math.floor(timeLeft / 60), s = timeLeft % 60;
+            timerEl.innerText = `${m}:${s < 10 ? '0' : ''}${s}`;
+            if(timeLeft < 300) timerEl.classList.add('warning');
+        }, 1000);
+    }
+
+    function confirmSubmit() { if(confirm("Bạn muốn nộp bài?")) calculateScore(); }
+
+    function calculateScore() {
+        let score = 0;
+        quizData.forEach((q, i) => {
+            if(q.type === 'ds') {
+                if(JSON.stringify(userAnswers[i]) === JSON.stringify(q.c)) score++;
+            } else {
+                if(userAnswers[i] == q.c) score++;
+            }
+        });
+        document.getElementById('score-display').innerText = `${score}/${quizData.length}`;
+        document.getElementById('score-percent').innerText = `Điểm hệ 10: ${((score/quizData.length)*10).toFixed(2)}`;
+        document.getElementById('result-modal').style.display = 'flex';
+    }
+
+    window.onload = () => {
+        userAnswers = new Array(quizData.length).fill(null);
+        renderGrid();
+        showQ(0);
+        startTimer();
+    };
+</script>
+</body>
+</html>
